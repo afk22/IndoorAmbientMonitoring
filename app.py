@@ -21,7 +21,7 @@ points = np.array([SENSOR_1_POS, SENSOR_2_POS, SENSOR_3_POS])
 FROST_BASE_URL = "https://gi3.gis.lrg.tum.de/frost/v1.1"
 
 # 3. Metrics Configuration (Thing 1, Thing 2, Thing 3 arrays for each)
-# lpp_id 1: Temperature, lpp_id 2: Humidity, lpp_id 3: CO2, lpp_id 4: Particulates
+# Swapped CO2 and Particulates sensor IDs based on data routing
 METRICS = {
     "Temperature": {
         "unit": "°C",
@@ -44,7 +44,7 @@ METRICS = {
         "cmap": "Reds",
         "vmin": 400.0,
         "vmax": 1500.0,
-        "sensor_ids": [1820, 1858, 1881],
+        "sensor_ids": [1819, 1857, 1880], # Corrected IDs
         "fallbacks": [450.0, 600.0, 550.0]
     },
     "Particulates": {
@@ -52,7 +52,7 @@ METRICS = {
         "cmap": "Purples",
         "vmin": 0.0,
         "vmax": 100.0,
-        "sensor_ids": [1819, 1857, 1880],
+        "sensor_ids": [1820, 1858, 1881], # Corrected IDs
         "fallbacks": [12.0, 15.0, 10.0]
     }
 }
