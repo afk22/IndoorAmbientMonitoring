@@ -10,46 +10,78 @@ from datetime import datetime
 # CONFIGURATION AND SENSOR SETTINGS
 # ==========================================
 
-# 1. Sensor Positions - UPDATED
-SENSOR_1_POS = [9.0, 38.0]    # Thing 1 (ID: 1817) yeni koordinatları
-SENSOR_2_POS = [13.0, 18.0]   # Thing 2 (ID: 1855) yeni koordinatları
-SENSOR_3_POS = [19.0, 50.0]   # Thing 3 (ID: 1713) koordinatları
+# 1. Sensor Positions
+SENSOR_1_POS = [9.0, 38.0]    # Thing 1
+SENSOR_2_POS = [13.0, 18.0]   # Thing 2
+SENSOR_3_POS = [19.0, 50.0]   # Thing 3
 
 points = np.array([SENSOR_1_POS, SENSOR_2_POS, SENSOR_3_POS])
 
-# 2. Live API (TUM FROST Server) Information
+# 2. Live API (TUM FROST Server) Base
 FROST_BASE_URL = "https://gi3.gis.lrg.tum.de/frost/v1.1"
-SENSOR_1_IOT_ID = 1817  # Group 7: Thing 1 -> Temperature
-SENSOR_2_IOT_ID = 1855  # Group 7: Thing 2 -> Temperature
-SENSOR_3_IOT_ID = 1713  # Group 7: Thing 3 -> Temperature
+
+# 3. Metrics Configuration (Thing 1, Thing 2, Thing 3 arrays for each)
+# lpp_id 1: Temperature, lpp_id 2: Humidity, lpp_id 3: CO2, lpp_id 4: Particulates
+METRICS = {
+    "Temperature": {
+        "unit": "°C",
+        "cmap": "coolwarm",
+        "vmin": 15.0,
+        "vmax": 35.0,
+        "sensor_ids": [1817, 1855, 1713],
+        "fallbacks": [23.5, 24.2, 23.8]
+    },
+    "Humidity": {
+        "unit": "%",
+        "cmap": "YlGnBu",
+        "vmin": 20.0,
+        "vmax": 80.0,
+        "sensor_ids": [1818, 1856, 1725],
+        "fallbacks": [45.0, 50.0, 48.0]
+    },
+    "CO2 Concentration": {
+        "unit": "ppm",
+        "cmap": "Reds",
+        "vmin": 400.0,
+        "vmax": 1500.0,
+        "sensor_ids": [1820, 1858, 1881],
+        "fallbacks": [450.0, 600.0, 550.0]
+    },
+    "Particulates": {
+        "unit": "µg/m³",
+        "cmap": "Purples",
+        "vmin": 0.0,
+        "vmax": 100.0,
+        "sensor_ids": [1819, 1857, 1880],
+        "fallbacks": [12.0, 15.0, 10.0]
+    }
+}
 
 def fetch_history_from_frost(url, iot_id, count=20):
     """Fetches the latest N observations for historical tracking."""
     try:
-        # Requesting last N entries ordered by time descending
         api_url = f"{url}/Datastreams({iot_id})/Observations?$top={count}&$orderby=phenomenonTime%20desc"
         response = requests.get(api_url, timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get("value"):
-                # Returns pairs of (value, timestamp)
                 return [(float(obs["result"]), obs["phenomenonTime"]) for obs in data["value"]]
-    except Exception as e:
+    except Exception:
         pass
     return None
 
 @st.cache_data(ttl=5)
-def get_all_sensor_data():
-    """Pulls historical streams for all three sensors."""
-    # Fallback structure if API is down
-    default_time = datetime.now().isoformat()
-    fallback_1 = [(23.5, default_time)] * 20
-    fallback_2 = [(24.2, default_time)] * 20
-    fallback_3 = [(23.8, default_time)] * 20
+def get_sensor_data_for_metric(metric_name):
+    """Pulls historical streams for the selected metric."""
+    config = METRICS[metric_name]
+    ids = config["sensor_ids"]
+    fb_vals = config["fallbacks"]
     
-    s1_data = fetch_history_from_frost(FROST_BASE_URL, SENSOR_1_IOT_ID, count=20) or fallback_1
-    s2_data = fetch_history_from_frost(FROST_BASE_URL, SENSOR_2_IOT_ID, count=20) or fallback_2
-    s3_data = fetch_history_from_frost(FROST_BASE_URL, SENSOR_3_IOT_ID, count=20) or fallback_3
+    default_time = datetime.now().isoformat()
+    
+    s1_data = fetch_history_from_frost(FROST_BASE_URL, ids[0]) or [(fb_vals[0], default_time)] * 20
+    s2_data = fetch_history_from_frost(FROST_BASE_URL, ids[1]) or [(fb_vals[1], default_time)] * 20
+    s3_data = fetch_history_from_frost(FROST_BASE_URL, ids[2]) or [(fb_vals[2], default_time)] * 20
     
     return s1_data, s2_data, s3_data
 
@@ -57,12 +89,20 @@ def get_all_sensor_data():
 # STREAMLIT INTERFACE AND SLIDER
 # ==========================================
 
-st.set_page_config(page_title="Library Sensor Heatmap", layout="centered")
-st.title("Library Spatial Temperature Distribution")
+st.set_page_config(page_title="Library Environmental Heatmaps", layout="centered")
+st.title("Library Spatial Environment Distribution")
 st.write("Pulling real-time and historical data directly from the **TUM FROST Server**.")
 
-# Fetch historical blocks for 3 sensors
-s1_history, s2_history, s3_history = get_all_sensor_data()
+# Sidebar: Metric Selection
+st.sidebar.subheader("Measurement Type")
+selected_metric = st.sidebar.selectbox(
+    "Select Map Layer:",
+    options=list(METRICS.keys())
+)
+
+# Fetch historical blocks for the selected metric
+s1_history, s2_history, s3_history = get_sensor_data_for_metric(selected_metric)
+metric_config = METRICS[selected_metric]
 
 # Ensure we map available data indices safely across all sensors
 max_steps = min(len(s1_history), len(s2_history), len(s3_history))
@@ -73,17 +113,17 @@ time_step = st.sidebar.slider(
     label="Go back in time (Steps)",
     min_value=0,
     max_value=max_steps - 1 if max_steps > 0 else 0,
-    value=0, # Default 0 means the most recent data (LIVE)
+    value=0, 
     help="0 is the latest live data. Higher numbers step back into past records."
 )
 
-# Extract temperatures based on slider position
-temp_1, time_1 = s1_history[time_step]
-temp_2, time_2 = s2_history[time_step]
-temp_3, time_3 = s3_history[time_step]
-temperatures = np.array([temp_1, temp_2, temp_3])
+# Extract values based on slider position
+val_1, time_1 = s1_history[time_step]
+val_2, time_2 = s2_history[time_step]
+val_3, time_3 = s3_history[time_step]
+sensor_values = np.array([val_1, val_2, val_3])
 
-# Parse timestamp clean display
+# Parse timestamp
 try:
     clean_time = datetime.strptime(time_1[:19], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
 except:
@@ -91,17 +131,18 @@ except:
 
 # Display Mode Info
 if time_step == 0:
-    st.sidebar.success(f"🟢 Mode: LIVE DATA")
+    st.sidebar.success("🟢 Mode: LIVE DATA")
 else:
     st.sidebar.warning(f"⏳ Mode: HISTORICAL (Step {time_step})")
     
 st.sidebar.info(f"Data Timestamp:\n{clean_time}")
 
-# Sidebar Metrics
-st.sidebar.subheader("Displayed Values")
-st.sidebar.metric(label="Sensor 1 (Thing 1)", value=f"{round(temp_1, 2)} °C")
-st.sidebar.metric(label="Sensor 2 (Thing 2)", value=f"{round(temp_2, 2)} °C")
-st.sidebar.metric(label="Sensor 3 (Thing 3)", value=f"{round(temp_3, 2)} °C")
+# Sidebar Metrics Display
+unit = metric_config["unit"]
+st.sidebar.subheader(f"Current {selected_metric} Values")
+st.sidebar.metric(label="Sensor 1 (Thing 1)", value=f"{round(val_1, 2)} {unit}")
+st.sidebar.metric(label="Sensor 2 (Thing 2)", value=f"{round(val_2, 2)} {unit}")
+st.sidebar.metric(label="Sensor 3 (Thing 3)", value=f"{round(val_3, 2)} {unit}")
 
 if st.button("🔄 Force Refresh API"):
     st.cache_data.clear()
@@ -173,33 +214,38 @@ def idw_interpolation(x, y, values, grid_x, grid_y, power=2):
 resolution = 0.3 
 grid_x, grid_y = np.mgrid[0:X_MAX:resolution, 0:Y_MAX:resolution]
 
-with st.spinner('Generating heatmap layer...'):
-    grid_z = idw_interpolation(points[:, 0], points[:, 1], temperatures, grid_x, grid_y)
+with st.spinner(f'Generating {selected_metric} heatmap layer...'):
+    grid_z = idw_interpolation(points[:, 0], points[:, 1], sensor_values, grid_x, grid_y)
 
 # ==========================================
-# VISUALIZATION (Fixed scale 20°C - 40°C)
+# VISUALIZATION
 # ==========================================
 fig, ax = plt.subplots(figsize=(8, 10)) 
 ax.imshow(img, extent=[0, X_MAX, 0, Y_MAX], origin='upper', alpha=0.8)
 
-vmin_val = 20.0
-vmax_val = 40.0
+vmin_val = metric_config["vmin"]
+vmax_val = metric_config["vmax"]
+cmap_choice = metric_config["cmap"]
+
+# Determine dynamic contour levels
 color_levels = np.linspace(vmin_val, vmax_val, 41)
 
-c = ax.contourf(grid_x, grid_y, grid_z, levels=color_levels, cmap='coolwarm', vmin=vmin_val, vmax=vmax_val, alpha=0.4)
+c = ax.contourf(grid_x, grid_y, grid_z, levels=color_levels, cmap=cmap_choice, vmin=vmin_val, vmax=vmax_val, alpha=0.4)
 
-cbar = fig.colorbar(c, ax=ax, shrink=0.7, ticks=np.arange(vmin_val, vmax_val + 1, 2))
-cbar.set_label('Temperature (°C)', weight='bold')
+# Create colorbar based on data range
+ticks_count = 10
+cbar = fig.colorbar(c, ax=ax, shrink=0.7, ticks=np.linspace(vmin_val, vmax_val, ticks_count))
+cbar.set_label(f'{selected_metric} ({unit})', weight='bold')
 cbar.ax.set_ylim(vmin_val, vmax_val)
 
 ax.scatter(points[:, 0], points[:, 1], color='black', marker='x', s=100, linewidths=2, label='Active Sensors')
-for i, txt in enumerate(np.round(temperatures, 1)):
-    ax.annotate(f"{txt}°C", (points[i, 0], points[i, 1]), 
+for i, txt in enumerate(np.round(sensor_values, 1)):
+    ax.annotate(f"{txt} {unit}", (points[i, 0], points[i, 1]), 
                 textcoords="offset points", xytext=(0,10), 
-                ha='center', fontsize=10, color='black', weight='bold',
+                ha='center', fontsize=9, color='black', weight='bold',
                 bbox=dict(boxstyle="round,pad=0.3", fc="white", edgecolor="black", alpha=0.8))
 
-ax.set_title(f"Library Heatmap - {clean_time}")
+ax.set_title(f"Library {selected_metric} Heatmap - {clean_time}")
 ax.set_xlabel("Width (meters)")
 ax.set_ylabel("Length (meters)")
 ax.legend(loc='lower left')
