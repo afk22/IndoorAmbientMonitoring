@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ==========================================
 # CONFIGURATION AND SENSOR SETTINGS
@@ -21,7 +21,6 @@ points = np.array([SENSOR_1_POS, SENSOR_2_POS, SENSOR_3_POS])
 FROST_BASE_URL = "https://gi3.gis.lrg.tum.de/frost/v1.1"
 
 # 3. Metrics Configuration (Thing 1, Thing 2, Thing 3 arrays for each)
-# Swapped CO2 and Particulates sensor IDs based on data routing
 METRICS = {
     "Temperature": {
         "unit": "°C",
@@ -44,7 +43,7 @@ METRICS = {
         "cmap": "Reds",
         "vmin": 400.0,
         "vmax": 1500.0,
-        "sensor_ids": [1819, 1857, 1880], # Corrected IDs
+        "sensor_ids": [1819, 1857, 1880], 
         "fallbacks": [450.0, 600.0, 550.0]
     },
     "Particulates": {
@@ -52,7 +51,7 @@ METRICS = {
         "cmap": "Purples",
         "vmin": 0.0,
         "vmax": 100.0,
-        "sensor_ids": [1820, 1858, 1881], # Corrected IDs
+        "sensor_ids": [1820, 1858, 1881], 
         "fallbacks": [12.0, 15.0, 10.0]
     }
 }
@@ -123,9 +122,11 @@ val_2, time_2 = s2_history[time_step]
 val_3, time_3 = s3_history[time_step]
 sensor_values = np.array([val_1, val_2, val_3])
 
-# Parse timestamp
+# Parse timestamp and adjust for Munich Time (+2 Hours)
 try:
-    clean_time = datetime.strptime(time_1[:19], "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d %H:%M:%S")
+    utc_time = datetime.strptime(time_1[:19], "%Y-%m-%dT%H:%M:%S")
+    munich_time = utc_time + timedelta(hours=2) # Add 2 hours for local time
+    clean_time = munich_time.strftime("%Y-%m-%d %H:%M:%S")
 except:
     clean_time = time_1
 
@@ -135,7 +136,7 @@ if time_step == 0:
 else:
     st.sidebar.warning(f"⏳ Mode: HISTORICAL (Step {time_step})")
     
-st.sidebar.info(f"Data Timestamp:\n{clean_time}")
+st.sidebar.info(f"Data Timestamp (Munich):\n{clean_time}")
 
 # Sidebar Metrics Display
 unit = metric_config["unit"]
