@@ -20,37 +20,29 @@ points = np.array([SENSOR_1_POS, SENSOR_2_POS, SENSOR_3_POS])
 # 2. Live API (TUM FROST Server) Base
 FROST_BASE_URL = "https://gi3.gis.lrg.tum.de/frost/v1.1"
 
-# 3. Metrics Configuration (Thing 1, Thing 2, Thing 3 arrays for each)
+# 3. Metrics Configuration (Removed hardcoded vmin/vmax)
 METRICS = {
     "Temperature": {
         "unit": "°C",
         "cmap": "coolwarm",
-        "vmin": 15.0,
-        "vmax": 35.0,
         "sensor_ids": [1817, 1855, 1713],
         "fallbacks": [23.5, 24.2, 23.8]
     },
     "Humidity": {
         "unit": "%",
         "cmap": "YlGnBu",
-        "vmin": 20.0,
-        "vmax": 80.0,
         "sensor_ids": [1818, 1856, 1725],
         "fallbacks": [45.0, 50.0, 48.0]
     },
     "CO2 Concentration": {
         "unit": "ppm",
         "cmap": "Reds",
-        "vmin": 400.0,
-        "vmax": 1500.0,
         "sensor_ids": [1819, 1857, 1880], 
         "fallbacks": [450.0, 600.0, 550.0]
     },
     "Particulates": {
         "unit": "µg/m³",
         "cmap": "Purples",
-        "vmin": 0.0,
-        "vmax": 100.0,
         "sensor_ids": [1820, 1858, 1881], 
         "fallbacks": [12.0, 15.0, 10.0]
     }
@@ -219,24 +211,42 @@ with st.spinner(f'Generating {selected_metric} heatmap layer...'):
     grid_z = idw_interpolation(points[:, 0], points[:, 1], sensor_values, grid_x, grid_y)
 
 # ==========================================
-# VISUALIZATION
+# VISUALIZATION WITH DYNAMIC COLOR SCALING
 # ==========================================
 fig, ax = plt.subplots(figsize=(8, 10)) 
 ax.imshow(img, extent=[0, X_MAX, 0, Y_MAX], origin='upper', alpha=0.8)
 
-vmin_val = metric_config["vmin"]
-vmax_val = metric_config["vmax"]
 cmap_choice = metric_config["cmap"]
 
-# Determine dynamic contour levels
+# DYNAMIC SCALE CALCULATION
+# Find min and max of current sensor values
+min_val = np.min(sensor_values)
+max_val = np.max(sensor_values)
+
+# Calculate a margin to ensure markers aren't exactly on the edge of the color map
+if max_val == min_val:
+    # Fallback if all sensors read the exact same value (prevents math errors)
+    vmin_val = min_val - 1.0
+    vmax_val = max_val + 1.0
+else:
+    # Add a 10% dynamic padding to top and bottom
+    margin = (max_val - min_val) * 0.1
+    vmin_val = min_val - margin
+    vmax_val = max_val + margin
+
+# Determine dynamic contour levels based on new dynamic limits
 color_levels = np.linspace(vmin_val, vmax_val, 41)
 
 c = ax.contourf(grid_x, grid_y, grid_z, levels=color_levels, cmap=cmap_choice, vmin=vmin_val, vmax=vmax_val, alpha=0.4)
 
-# Create colorbar based on data range
+# Create colorbar based on dynamic data range
 ticks_count = 10
-cbar = fig.colorbar(c, ax=ax, shrink=0.7, ticks=np.linspace(vmin_val, vmax_val, ticks_count))
+tick_levels = np.linspace(vmin_val, vmax_val, ticks_count)
+cbar = fig.colorbar(c, ax=ax, shrink=0.7, ticks=tick_levels)
 cbar.set_label(f'{selected_metric} ({unit})', weight='bold')
+
+# Format ticks so they don't show unnecessarily long decimal numbers
+cbar.ax.set_yticklabels([f"{tick:.1f}" for tick in tick_levels])
 cbar.ax.set_ylim(vmin_val, vmax_val)
 
 ax.scatter(points[:, 0], points[:, 1], color='black', marker='x', s=100, linewidths=2, label='Active Sensors')
